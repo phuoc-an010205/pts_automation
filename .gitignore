@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+credentials/
+*.pem
+*.key
+
+# Runtime data
+data/uploads/*
+!data/uploads/.gitkeep
+logs/
+*.log
+
+# Package manager caches
+.npm/
+.pnpm-store/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
