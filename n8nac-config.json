@@ -1,0 +1,24 @@
+{
+  "version": 4,
+  "activeEnvironmentId": "n8n-as-code-2",
+  "environmentTargets": [
+    {
+      "id": "n8n-as-code",
+      "name": "n8n-as-code",
+      "kind": "external-instance",
+      "url": "http://localhost:5678"
+    }
+  ],
+  "environments": [
+    {
+      "id": "n8n-as-code-2",
+      "name": "n8n-as-code",
+      "syncSlug": "n8n-as-code",
+      "environmentTargetId": "n8n-as-code",
+      "projectId": "personal",
+      "projectName": "Personal",
+      "workflowsPath": "workflows/n8n-as-code",
+      "folderSync": true
+    }
+  ]
+}

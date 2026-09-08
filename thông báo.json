@@ -1,0 +1,38 @@
+{
+  "ok": true,
+  "jobs": [
+    {
+      "id": "JOB-A3443F39-F213-4713-9B4C-59BC1B1AD825",
+      "status": "Máy đang thực thi",
+      "itemCode": "KN0809260113",
+      "action": "fulfill tartan v4",
+      "productType": "Jeff Hat",
+      "assignedWorkerId": "PTS-PC-B",
+      "createdAt": "2026-09-08T08:19:58.146Z",
+      "updatedAt": "2026-09-08T08:19:58.676Z",
+      "error": null
+    },
+    {
+      "id": "JOB-61CB1B42-639C-420C-8934-F476226FA497",
+      "status": "Máy đang bị lỗi",
+      "itemCode": "KN0809260113",
+      "action": "fulfill tartan v4",
+      "productType": "Jeff Hat",
+      "assignedWorkerId": "PTS-PC-B",
+      "createdAt": "2026-09-08T08:19:42.032Z",
+      "updatedAt": "2026-09-08T08:21:48.723Z",
+      "error": "Photoshop execution failed for job JOB-61CB1B42-639C-420C-8934-F476226FA497"
+    },
+    {
+      "id": "JOB-B4DA192D-8CAD-4D86-BA5D-6EB56BAC3056",
+      "status": "Máy xử lí xong",
+      "itemCode": "KN0809260113",
+      "action": "fulfill tartan v4",
+      "productType": "Jeff Hat",
+      "assignedWorkerId": "PTS-PC-B",
+      "createdAt": "2026-09-08T08:19:12.867Z",
+      "updatedAt": "2026-09-08T08:19:42.713Z",
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "itemCode": "KN0809260113",
+  "action": "fulfill tartan v4",
+  "path": "G:\\.shortcut-targets-by-id\\13EtClCWA_cx1YzC5f_Q-Jh2WuD1kh4oB\\SELLERS\\TS23\\TS23-12082502",
+  "productType": "Jeff Hat",
+  "layerNameList": "jeff-hat__template_pgc",
+  "replacements": "tartan:\\\\Pc42\\ttvc\\Source\\tartan\\MacDuff Ancient.jpg crest:\\\\Pc42\\ttvc\\Source\\crest\\McDuff.eps",
+  "outputPath": "G:\\Shared drives\\DESIGNS FULFILL\\test_2d_phuocan\\KN0809260113",
+  "outputExt": "jpg",
+  "mockupPath": "\\\\pc42\\ttvc\\mockup\\[mktsp-prod] only for tool\\ttvc\\clothing\\jeff-hat",
+  "imageQuantity": "1,2,3",
+  "sheetRange": "A1:J7"
+}
