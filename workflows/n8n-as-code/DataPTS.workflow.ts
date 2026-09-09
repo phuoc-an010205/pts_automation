@@ -82,7 +82,7 @@ export class DataptsWorkflow {
         sendBody: true,
         specifyBody: 'json',
         jsonBody:
-            '={{ JSON.stringify({ itemCode: $json.itemCode, action: $json.action, path: $json.path, productType: $json.productType, layerNameList: $json.layerNameList, replacements: $json.replacements, outputPath: $json.outputPath, outputExt: $json.outputExt, mockupPath: $json.mockupPath, imageQuantity: $json.imageQuantity, sheetRange: $json.sheetRange }) }}',
+            '={{ JSON.stringify({ itemCode: $json.itemCode, action: $json.action, path: $json.path, productType: $json.productType, layerNameList: $json.layerNameList, replacements: $json.replacements, outputPath: $json.outputPath, outputExt: $json.outputExt, mockupPath: $json.mockupPath, imageQuantity: $json.imageQuantity, sheetRange: $json.sheetRange ?? "Sheet1!A1:J1000" }) }}',
         options: {},
     };
 

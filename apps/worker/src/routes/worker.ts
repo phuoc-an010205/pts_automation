@@ -74,7 +74,7 @@ export const registerWorkerRoutes = async (
   app.get("/health", async (_request, reply) => {
     const workerState = options.jobProcessor.getState();
     const isHealthy =
-      workerState.status === "IDLE" || workerState.status === "BUSY";
+      workerState.status === "QUEUED" || workerState.status === "RUNNING";
 
     return await reply.code(isHealthy ? 200 : 503).send({
       ok: isHealthy,

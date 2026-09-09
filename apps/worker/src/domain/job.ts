@@ -42,8 +42,8 @@ export const workerAcknowledgementSchema = z
 
 export const workerRuntimeStatusSchema = z.enum([
   "STARTING",
-  "IDLE",
-  "BUSY",
+  "QUEUED",
+  "RUNNING",
   "ERROR",
 ]);
 

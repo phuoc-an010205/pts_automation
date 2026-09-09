@@ -25,7 +25,7 @@ export type JobClaimResult =
     }
   | {
       kind: "NOT_READY";
-      status: Exclude<WorkerRuntimeStatus, "IDLE" | "BUSY">;
+      status: Exclude<WorkerRuntimeStatus, "QUEUED" | "RUNNING">;
     };
 
 export interface WorkerStateSnapshot {
@@ -77,11 +77,11 @@ export class WorkerState {
   public markReady(): void {
     if (this.currentJob) {
       throw new WorkerStateError(
-        `Worker ${this.workerId} cannot become IDLE while job ${this.currentJob.jobId} is active`,
+        `Worker ${this.workerId} cannot become QUEUED while job ${this.currentJob.jobId} is active`,
       );
     }
 
-    this.status = "IDLE";
+    this.status = "QUEUED";
     this.lastError = null;
     this.touch();
   }
@@ -104,20 +104,20 @@ export class WorkerState {
       };
     }
 
-    if (this.status === "BUSY" && this.currentJob) {
+    if (this.status === "RUNNING" && this.currentJob) {
       return {
         kind: "BUSY",
         currentJobId: this.currentJob.jobId,
       };
     }
 
-    if (this.status === "BUSY") {
+    if (this.status === "RUNNING") {
       throw new WorkerStateError(
-        `Worker ${this.workerId} is BUSY without an active job`,
+        `Worker ${this.workerId} is RUNNING without an active job`,
       );
     }
 
-    if (this.status !== "IDLE") {
+    if (this.status !== "QUEUED") {
       return {
         kind: "NOT_READY",
         status: this.status,
@@ -125,7 +125,7 @@ export class WorkerState {
     }
 
     this.currentJob = structuredClone(job);
-    this.status = "BUSY";
+    this.status = "RUNNING";
     this.lastError = null;
     this.touch();
 
@@ -139,7 +139,7 @@ export class WorkerState {
     this.assertCurrentJob(jobId);
     this.recordTerminalJob(jobId, "COMPLETED");
     this.currentJob = null;
-    this.status = "IDLE";
+    this.status = "QUEUED";
     this.lastJobId = jobId;
     this.lastJobOutcome = "COMPLETED";
     this.lastError = null;
@@ -150,7 +150,7 @@ export class WorkerState {
     this.assertCurrentJob(jobId);
     this.recordTerminalJob(jobId, "FAILED");
     this.currentJob = null;
-    this.status = "IDLE";
+    this.status = "QUEUED";
     this.lastJobId = jobId;
     this.lastJobOutcome = "FAILED";
     this.lastError = this.normalizeError(error);

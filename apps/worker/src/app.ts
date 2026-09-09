@@ -87,6 +87,15 @@ export const buildWorkerApp = async (
         app.log.info({ jobId: job.jobId }, "Job claimed via WebSocket");
       }
     },
+    getStatus: () => {
+      const state = jobProcessor.getState();
+      const psStatus = jobProcessor.getControllerStatus();
+      return {
+        status: state.status,
+        photoshopStatus: psStatus.status,
+        currentJobId: state.currentJobId,
+      };
+    },
     logger: wsLogger,
   });
 

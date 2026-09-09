@@ -15,6 +15,11 @@ export interface WsClientOptions {
   apiKey: string;
   heartbeatIntervalMs: number;
   onJob: (job: WorkerJobRequest) => void;
+  getStatus: () => {
+    status: WorkerRuntimeStatus;
+    photoshopStatus: PhotoshopStatus;
+    currentJobId: string | null;
+  };
   logger: WsClientLogger;
 }
 
@@ -36,9 +41,6 @@ export class WsClient {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private isShuttingDown = false;
-  private currentStatus: WorkerRuntimeStatus = "STARTING";
-  private currentPhotoshopStatus: PhotoshopStatus = "NOT_RUNNING";
-  private currentJobId: string | null = null;
 
   public constructor(options: WsClientOptions) {
     this.options = options;
@@ -66,16 +68,6 @@ export class WsClient {
       this.ws.close(1000, "Worker shutting down");
       this.ws = null;
     }
-  }
-
-  public updateState(
-    status: WorkerRuntimeStatus,
-    photoshopStatus: PhotoshopStatus,
-    currentJobId: string | null,
-  ): void {
-    this.currentStatus = status;
-    this.currentPhotoshopStatus = photoshopStatus;
-    this.currentJobId = currentJobId;
   }
 
   public reportJobCompleted(jobId: string): void {
@@ -207,13 +199,14 @@ export class WsClient {
   }
 
   private sendHeartbeat(): void {
+    const state = this.options.getStatus();
     this.sendMessage({
       type: "HEARTBEAT",
       workerId: this.options.workerId,
       payload: {
-        status: this.currentStatus,
-        photoshopStatus: this.currentPhotoshopStatus,
-        currentJobId: this.currentJobId,
+        status: state.status,
+        photoshopStatus: state.photoshopStatus,
+        currentJobId: state.currentJobId,
       },
     });
   }

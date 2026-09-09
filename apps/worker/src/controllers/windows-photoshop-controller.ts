@@ -114,7 +114,7 @@ export class WindowsPhotoshopController implements PhotoshopController {
           const outputExt = job.request.outputExt ?? "jpg";
           const mockupPath = job.request.mockupPath ?? "";
           const imageQuantity = job.request.imageQuantity ?? "";
-          return [itemCode, action, path, productType, layerNameList, replacements, outputPath, outputExt, mockupPath, imageQuantity];
+          return [itemCode, action, path, productType, layerNameList, replacements, outputPath, outputExt, mockupPath, `"${imageQuantity}"`];
         });
 
         const allRows = [header, ...dataRows];
@@ -136,8 +136,14 @@ export class WindowsPhotoshopController implements PhotoshopController {
       };
 
       await writeFile(jsonPath, JSON.stringify(jobData, null, 2), "utf-8");
-
+      console.log("====================================");
+      console.log("Photoshop Job:", job.jobId);
+      console.log("CSV:", csvPath);
+      console.log("JSXBIN:", this.jsxbinPath);
+      console.log("====================================");
       await this.runJsxbin(jsonPath, csvPath, signal);
+      
+      console.log("Photoshop Finished:", job.jobId);
 
       return {
         jobId: job.jobId,
@@ -255,59 +261,146 @@ export class WindowsPhotoshopController implements PhotoshopController {
   }
 
   private async runJsxbin(_jsonPath: string, csvPath: string, signal?: AbortSignal): Promise<void> {
-    const escapedCsvPath = csvPath.replace(/\\/g, "\\\\");
-    const escapedJsxbinPath = this.jsxbinPath.replace(/\\/g, "\\\\");
+  const escapedJsxbinPath = this.jsxbinPath.replace(/\\/g, "\\\\");
+  const escapedCsvPath = csvPath.replace(/\\/g, "\\\\");
 
-    const wrapperContent = [
-      `(function() {`,
-      `  var _origOpenDlg = File.prototype.openDlg;`,
-      `  File.prototype.openDlg = function(prompt, filter, multi) {`,
-      `    return new File("${escapedCsvPath}");`,
-      `  };`,
-      `  $.evalFile("${escapedJsxbinPath}");`,
-      `  File.prototype.openDlg = _origOpenDlg;`,
-      `})();`,
-    ].join("\n");
+  const maxRetries = 5;
 
-    const wrapperPath = join(this.localCsvDir, `wrapper-${Date.now()}.jsx`);
-    await writeFile(wrapperPath, wrapperContent, "utf-8");
+  try {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const script = `
+$ErrorActionPreference = "Stop"
 
-    const maxRetries = 5;
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName Microsoft.VisualBasic
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
 
-    try {
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          const script = `
+Write-Host "[1] Connect Photoshop COM"
 $app = New-Object -ComObject Photoshop.Application
 $app.Visible = $true
+
+# Đưa Photoshop lên foreground
+Start-Sleep -Milliseconds 1000
+try {
+    [Microsoft.VisualBasic.Interaction]::AppActivate("Adobe Photoshop") | Out-Null
+} catch {}
+
+Write-Host "[2] Launch JSXBIN"
+$app.DoJavaScriptFile("${escapedJsxbinPath}")
+
+# ==========================================
+# CHỜ HỘP THOẠI OPEN FILE XUẤT HIỆN
+# ==========================================
+Write-Host "[3] Waiting Open Dialog..."
+
+$root = [System.Windows.Automation.AutomationElement]::RootElement
+$dialog = $null
+
+for ($i = 0; $i -lt 30; $i++) {
+
+    $windows = $root.FindAll(
+        [System.Windows.Automation.TreeScope]::Children,
+        (New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+            [System.Windows.Automation.ControlType]::Window
+        ))
+    )
+
+    foreach ($w in $windows) {
+        $name = $w.Current.Name
+
+        if ($name -match "Open|Mở|File|Chọn") {
+            $dialog = $w
+            break
+        }
+    }
+
+    if ($dialog) { break }
+
+    Start-Sleep -Milliseconds 500
+}
+
+if (-not $dialog) {
+    throw "Open dialog not found after waiting 15 seconds."
+}
+
+Write-Host "[4] Dialog Found: $($dialog.Current.Name)"
+
+# ==========================================
+# ACTIVATE DIALOG
+# ==========================================
+try {
+    $dialog.SetFocus()
+} catch {}
+
 Start-Sleep -Milliseconds 500
-$app.DoJavaScriptFile("${wrapperPath.replace(/\\/g, "\\\\")}")
+
+# ==========================================
+# COPY CSV PATH VÀO CLIPBOARD
+# ==========================================
+Write-Host "[5] Copy CSV Path"
+[System.Windows.Forms.Clipboard]::SetText("${escapedCsvPath}")
+
+Start-Sleep -Milliseconds 500
+
+# ==========================================
+# PASTE FILE PATH
+# ==========================================
+Write-Host "[6] Paste CSV"
+[System.Windows.Forms.SendKeys]::SendWait("^v")
+
+Start-Sleep -Milliseconds 500
+
+# ==========================================
+# ENTER ĐỂ OPEN FILE
+# ==========================================
+Write-Host "[7] Press ENTER"
+[System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
+
 Start-Sleep -Seconds 3
+
+Write-Host "[8] CSV Imported"
 `;
-          await execFileAsync("powershell", ["-NoProfile", "-Command", script], {
+
+        const { stdout, stderr } = await execFileAsync(
+          "powershell",
+          ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+          {
             timeout: 120000,
             signal,
-          });
-          return;
-        } catch (error: unknown) {
-          const isBusy =
-            error instanceof Error && error.message.includes("RPC_E_SERVERCALL_RETRYLATER");
-          if (isBusy && attempt < maxRetries) {
-            await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
-            continue;
-          }
-          throw error;
+            maxBuffer: 1024 * 1024 * 10,
+          },
+        );
+
+        if (stdout) {
+          console.log(stdout);
         }
-      }
-    } finally {
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-      try {
-        await unlink(wrapperPath);
-      } catch {
-        // ignore cleanup errors
+
+        if (stderr) {
+          console.error(stderr);
+        }
+
+        return;
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+
+        const isBusy = message.includes("RPC_E_SERVERCALL_RETRYLATER");
+
+        if (isBusy && attempt < maxRetries) {
+          console.warn(`Photoshop busy. Retry ${attempt}/${maxRetries}`);
+          await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
+          continue;
+        }
+
+        throw error;
       }
     }
+  } finally {
+    await new Promise((resolve) => setTimeout(resolve, 3000));
   }
+} 
 
   private normalizeError(error: unknown): string {
     const message = error instanceof Error ? error.message : String(error);

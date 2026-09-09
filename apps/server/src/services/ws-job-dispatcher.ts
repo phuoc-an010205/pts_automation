@@ -10,7 +10,7 @@ export interface WsJobDispatcherLogger {
 interface ConnectedWorker {
   workerId: string;
   ws: WebSocket;
-  status: "IDLE" | "BUSY" | "ERROR";
+  status: "QUEUED" | "RUNNING" | "ERROR";
   currentJobId: string | null;
 }
 
@@ -47,7 +47,7 @@ export class WsJobDispatcher {
     const worker: ConnectedWorker = {
       workerId,
       ws,
-      status: "IDLE",
+      status: "QUEUED",
       currentJobId: null,
     };
 
@@ -115,7 +115,7 @@ export class WsJobDispatcher {
   ): void {
     switch (message.type) {
       case "HEARTBEAT": {
-        worker.status = (message.payload?.status as ConnectedWorker["status"]) ?? "IDLE";
+        worker.status = (message.payload?.status as ConnectedWorker["status"]) ?? "QUEUED";
         worker.currentJobId = (message.payload?.currentJobId as string) ?? null;
 
         this.sendToWorker(worker, {
@@ -129,7 +129,7 @@ export class WsJobDispatcher {
 
       case "JOB_COMPLETED": {
         const jobId = message.payload?.jobId as string;
-        worker.status = "IDLE";
+        worker.status = "QUEUED";
         worker.currentJobId = null;
 
         this.logger.info(
@@ -143,7 +143,7 @@ export class WsJobDispatcher {
 
       case "JOB_FAILED": {
         const jobId = message.payload?.jobId as string;
-        worker.status = "IDLE";
+        worker.status = "QUEUED";
         worker.currentJobId = null;
 
         this.logger.info(
@@ -165,7 +165,7 @@ export class WsJobDispatcher {
 
   private dispatchPendingJobs(): void {
     const idleWorker = Array.from(this.workers.values()).find(
-      (w) => w.status === "IDLE" && w.ws.readyState === 1,
+      (w) => w.status === "QUEUED" && w.ws.readyState === 1,
     );
 
     if (!idleWorker || this.pendingJobs.length === 0) {
@@ -177,7 +177,7 @@ export class WsJobDispatcher {
       return;
     }
 
-    idleWorker.status = "BUSY";
+    idleWorker.status = "RUNNING";
     idleWorker.currentJobId = job.id;
 
     this.sendToWorker(idleWorker, {

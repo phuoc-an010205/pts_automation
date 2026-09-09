@@ -12,6 +12,7 @@ import { registerJobResultRoutes } from "./routes/job-results.js";
 import { registerJobRoutes } from "./routes/jobs.js";
 import { registerSheetJobRoutes } from "./routes/sheet-jobs.js";
 import { registerWorkerRoutes } from "./routes/workers.js";
+import { registerWsWorkerRoutes } from "./routes/ws-workers.js";
 import { GoogleSheetsService } from "./services/google-sheets.js";
 import { JobService } from "./services/job-service.js";
 import { WorkerRegistry } from "./services/worker-registry.js";
@@ -101,6 +102,12 @@ export const buildApp = async (
     serverApiKey: configuration.SERVER_API_KEY,
   });
 
+  await registerWsWorkerRoutes(app, {
+    wsDispatcher,
+    jobService,
+    serverApiKey: configuration.SERVER_API_KEY,
+  });
+
   app.get("/ws/worker", { websocket: true }, (socket, request) => {
     const url = new URL(request.url, `http://${request.headers.host ?? "localhost"}`);
     const workerId = url.searchParams.get("workerId");
@@ -162,6 +169,13 @@ export const buildApp = async (
         message: isClientError
           ? "The request could not be processed"
           : "An unexpected server error occurred",
+        details:
+          configuration.NODE_ENV === "development"
+            ? {
+                name: error instanceof Error ? error.name : "UnknownError",
+                message: error instanceof Error ? error.message : String(error),
+              }
+            : undefined,
       },
     });
   });
