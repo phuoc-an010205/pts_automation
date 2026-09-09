@@ -8,19 +8,13 @@ import Fastify, {
 import fastifyWebsocket from "@fastify/websocket";
 
 import { env, type ServerEnv } from "./config/env.js";
-import { registerJobResultRoutes } from "./routes/job-results.js";
-import { registerJobRoutes } from "./routes/jobs.js";
 import { registerSheetJobRoutes } from "./routes/sheet-jobs.js";
-import { registerWorkerRoutes } from "./routes/workers.js";
 import { registerWsWorkerRoutes } from "./routes/ws-workers.js";
 import { GoogleSheetsService } from "./services/google-sheets.js";
-import { JobService } from "./services/job-service.js";
-import { WorkerRegistry } from "./services/worker-registry.js";
 import { WsJobDispatcher } from "./services/ws-job-dispatcher.js";
 
 export interface BuildAppOptions {
   configuration?: ServerEnv;
-  workerRegistry?: WorkerRegistry;
   logger?: FastifyServerOptions["logger"];
 }
 
@@ -30,6 +24,9 @@ export const buildApp = async (
   const configuration = options.configuration ?? env;
   const logger = options.logger ?? {
     level: configuration.NODE_ENV === "production" ? "info" : "debug",
+    formatters: {
+      level: (label: string) => ({ level: label }),
+    },
     redact: {
       paths: [
         "req.headers['x-api-key']",
@@ -49,10 +46,6 @@ export const buildApp = async (
 
   await app.register(fastifyWebsocket);
 
-  const jobService = new JobService();
-  const workerRegistry =
-    options.workerRegistry ??
-    new WorkerRegistry(configuration.WORKER_OFFLINE_TIMEOUT_MS);
   const googleSheets = new GoogleSheetsService({
     serviceAccountPath: resolve(configuration.GOOGLE_SERVICE_ACCOUNT_PATH),
     spreadsheetId: configuration.GOOGLE_SPREADSHEET_ID,
@@ -65,10 +58,6 @@ export const buildApp = async (
   };
   const wsDispatcher = new WsJobDispatcher(wsLogger);
 
-  jobService.setJobCreatedListener((job) => {
-    wsDispatcher.notifyJobCreated(job);
-  });
-
   app.get("/health", async (_request, reply) =>
     await reply.code(200).send({
       ok: true,
@@ -79,32 +68,14 @@ export const buildApp = async (
     }),
   );
 
-  await registerJobRoutes(app, {
-    jobService,
-    serverApiKey: configuration.SERVER_API_KEY,
-  });
-
-  await registerWorkerRoutes(app, {
-    workerRegistry,
-    callbackApiKey: configuration.SERVER_CALLBACK_API_KEY,
-    serverApiKey: configuration.SERVER_API_KEY,
-  });
-
-  await registerJobResultRoutes(app, {
-    jobService,
-    workerRegistry,
-    callbackApiKey: configuration.SERVER_CALLBACK_API_KEY,
-  });
-
   await registerSheetJobRoutes(app, {
-    jobService,
+    wsDispatcher,
     googleSheets,
     serverApiKey: configuration.SERVER_API_KEY,
   });
 
   await registerWsWorkerRoutes(app, {
     wsDispatcher,
-    jobService,
     serverApiKey: configuration.SERVER_API_KEY,
   });
 

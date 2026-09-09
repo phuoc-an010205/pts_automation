@@ -8,7 +8,7 @@ import type {
 import { z, type ZodIssue } from "zod";
 
 import { GoogleSheetsService } from "../services/google-sheets.js";
-import { JobService } from "../services/job-service.js";
+import type { WsJobDispatcher } from "../services/ws-job-dispatcher.js";
 
 const apiKeyHeadersSchema = z
   .object({
@@ -17,7 +17,7 @@ const apiKeyHeadersSchema = z
   .passthrough();
 
 export interface SheetJobRoutesOptions {
-  jobService: JobService;
+  wsDispatcher: WsJobDispatcher;
   googleSheets: GoogleSheetsService;
   serverApiKey: string;
 }
@@ -63,28 +63,28 @@ export const registerSheetJobRoutes = async (
     }
   };
 
-  const createSheetJobSchema = z
+  const sendDataSchema = z
     .object({
-      idempotencyKey: z.string().trim().min(1).max(200).optional(),
-      itemCode: z.string().trim().min(1).max(100),
-      action: z.string().trim().min(1).max(100),
-      path: z.string().trim().min(1).max(500),
-      productType: z.string().trim().min(1).max(100),
-      layerNameList: z.string().trim().min(1).max(500),
+      workerId: z.string().trim().min(1).max(100),
+      sheetRange: z.string().trim().min(1).max(200),
+      itemCode: z.string().trim().min(1).max(100).optional(),
+      action: z.string().trim().min(1).max(100).optional(),
+      path: z.string().trim().min(1).max(500).optional(),
+      productType: z.string().trim().min(1).max(100).optional(),
+      layerNameList: z.string().trim().min(1).max(500).optional(),
       replacements: z.string().trim().max(500).optional().default(""),
       outputPath: z.string().trim().max(500).optional().default(""),
       outputExt: z.string().trim().max(50).optional().default("jpg"),
       mockupPath: z.string().trim().max(500).optional().default(""),
       imageQuantity: z.string().trim().max(50).optional().default(""),
-      sheetRange: z.string().trim().min(1).max(200),
     })
     .strict();
 
   app.post(
-    "/api/jobs-from-sheet",
+    "/api/send-data",
     { preHandler: authenticateRequest },
     async (request, reply) => {
-      const parsedRequest = createSheetJobSchema.safeParse(request.body);
+      const parsedRequest = sendDataSchema.safeParse(request.body);
 
       if (!parsedRequest.success) {
         return await reply.code(400).send({
@@ -97,7 +97,17 @@ export const registerSheetJobRoutes = async (
         });
       }
 
-      const { sheetRange, ...jobData } = parsedRequest.data;
+      const { workerId, sheetRange, ...meta } = parsedRequest.data;
+
+      if (!options.wsDispatcher.isWorkerConnected(workerId)) {
+        return await reply.code(404).send({
+          ok: false,
+          error: {
+            code: "WORKER_NOT_CONNECTED",
+            message: `Worker ${workerId} is not connected via WebSocket`,
+          },
+        });
+      }
 
       try {
         const data = await options.googleSheets.readRange(sheetRange);
@@ -112,19 +122,28 @@ export const registerSheetJobRoutes = async (
           });
         }
 
-        const result = await options.jobService.submitJob({
-          ...jobData,
-          data: {
-            sheetRange,
-            csvRows: data,
-          },
+        const sent = options.wsDispatcher.sendDataToWorker(workerId, {
+          ...meta,
+          sheetRange,
+          csvRows: data,
+          rowsCount: data.length,
         });
+
+        if (!sent) {
+          return await reply.code(500).send({
+            ok: false,
+            error: {
+              code: "DISPATCH_FAILED",
+              message: "Failed to send data to worker",
+            },
+          });
+        }
 
         return await reply.code(202).send({
           ok: true,
-          jobId: result.job.id,
-          status: result.job.status,
+          workerId,
           rowsCount: data.length,
+          message: "Data dispatched to worker",
         });
       } catch (error: unknown) {
         const message =
@@ -134,7 +153,7 @@ export const registerSheetJobRoutes = async (
           ok: false,
           error: {
             code: "SHEET_READ_ERROR",
-            message: `Failed to read sheet or create CSV: ${message}`,
+            message: `Failed to read sheet: ${message}`,
           },
         });
       }

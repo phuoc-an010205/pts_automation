@@ -1,12 +1,8 @@
 import WebSocket from "ws";
 
-import type { WorkerJobRequest } from "../domain/job.js";
-import type { WorkerRuntimeStatus } from "../domain/job.js";
-import type { PhotoshopStatus } from "../controllers/photoshop-controller.js";
-
 export interface WsClientLogger {
-  info(context: Record<string, unknown>, message: string): void;
-  error(context: Record<string, unknown>, message: string): void;
+  info(context: Record<string, unknown>, msg: string): void;
+  error(context: Record<string, unknown>, msg: string): void;
 }
 
 export interface WsClientOptions {
@@ -14,22 +10,17 @@ export interface WsClientOptions {
   workerId: string;
   apiKey: string;
   heartbeatIntervalMs: number;
-  onJob: (job: WorkerJobRequest) => void;
-  getStatus: () => {
-    status: WorkerRuntimeStatus;
-    photoshopStatus: PhotoshopStatus;
-    currentJobId: string | null;
-  };
+  onData: (data: Record<string, unknown>) => void;
   logger: WsClientLogger;
 }
 
 interface WsServerMessage {
-  type: "JOB_DISPATCHED" | "HEARTBEAT_ACK" | "ERROR";
+  type: "HEARTBEAT_ACK" | "DATA_DISPATCHED" | "ERROR";
   payload?: Record<string, unknown>;
 }
 
 interface WsClientMessage {
-  type: "HEARTBEAT" | "JOB_COMPLETED" | "JOB_FAILED";
+  type: "HEARTBEAT" | "DATA_RECEIVED" | "DATA_FAILED";
   workerId: string;
   payload?: Record<string, unknown>;
 }
@@ -70,19 +61,18 @@ export class WsClient {
     }
   }
 
-  public reportJobCompleted(jobId: string): void {
+  public reportDataReceived(): void {
     this.sendMessage({
-      type: "JOB_COMPLETED",
+      type: "DATA_RECEIVED",
       workerId: this.options.workerId,
-      payload: { jobId },
     });
   }
 
-  public reportJobFailed(jobId: string, error: string): void {
+  public reportDataFailed(error: string): void {
     this.sendMessage({
-      type: "JOB_FAILED",
+      type: "DATA_FAILED",
       workerId: this.options.workerId,
-      payload: { jobId, error },
+      payload: { error },
     });
   }
 
@@ -102,16 +92,16 @@ export class WsClient {
     url.searchParams.set("apiKey", this.options.apiKey);
 
     this.logger.info(
-      { event: "WS_CONNECTING", url: url.toString() },
-      "Connecting to server WebSocket",
+      { event: "WS_DANG_KET_NOI", url: url.toString() },
+      "Dang ket noi den server WebSocket",
     );
 
     this.ws = new WebSocket(url.toString());
 
     this.ws.on("open", () => {
       this.logger.info(
-        { event: "WS_CONNECTED", workerId: this.options.workerId },
-        "Connected to server via WebSocket",
+        { event: "WS_DA_KET_NOI", workerId: this.options.workerId },
+        "Da ket noi vao server qua WebSocket",
       );
 
       this.startHeartbeat();
@@ -124,16 +114,16 @@ export class WsClient {
         this.handleServerMessage(message);
       } catch (error) {
         this.logger.error(
-          { event: "WS_MESSAGE_PARSE_ERROR", err: error },
-          "Failed to parse server message",
+          { event: "WS_LOI_PARSE_TIN_NHAN", err: error },
+          "Khong the phan tich tin nhan tu server",
         );
       }
     });
 
     this.ws.on("close", (code, reason) => {
       this.logger.info(
-        { event: "WS_DISCONNECTED", code, reason: reason.toString() },
-        "Disconnected from server WebSocket",
+        { event: "WS_NGAT_KET_NOI", code, reason: reason.toString() },
+        "Ngat ket noi khoi server WebSocket",
       );
 
       this.stopHeartbeat();
@@ -145,29 +135,21 @@ export class WsClient {
 
     this.ws.on("error", (error) => {
       this.logger.error(
-        { event: "WS_ERROR", err: error },
-        "WebSocket error",
+        { event: "WS_LOI", err: error },
+        "Loi WebSocket",
       );
     });
   }
 
   private handleServerMessage(message: WsServerMessage): void {
     switch (message.type) {
-      case "JOB_DISPATCHED": {
-        const jobId = message.payload?.jobId as string;
-        const createdAt = message.payload?.createdAt as string;
-        const request = message.payload?.request as WorkerJobRequest["request"];
-
+      case "DATA_DISPATCHED": {
         this.logger.info(
-          { event: "WS_JOB_RECEIVED", jobId },
-          "Received job via WebSocket",
+          { event: "WS_DA_NHAN_DU_LIEU" },
+          "Da nhan du lieu tu server qua WebSocket",
         );
 
-        this.options.onJob({
-          jobId,
-          createdAt,
-          request,
-        });
+        this.options.onData(message.payload ?? {});
         break;
       }
 
@@ -177,8 +159,8 @@ export class WsClient {
 
       default:
         this.logger.error(
-          { event: "WS_UNKNOWN_MESSAGE", type: message.type },
-          "Unknown message type from server",
+          { event: "WS_LOAI_TIN_NHAN_KHONG_XAC_DINH", type: message.type },
+          "Loai tin nhan khong xac dinh tu server",
         );
     }
   }
@@ -199,15 +181,9 @@ export class WsClient {
   }
 
   private sendHeartbeat(): void {
-    const state = this.options.getStatus();
     this.sendMessage({
       type: "HEARTBEAT",
       workerId: this.options.workerId,
-      payload: {
-        status: state.status,
-        photoshopStatus: state.photoshopStatus,
-        currentJobId: state.currentJobId,
-      },
     });
   }
 

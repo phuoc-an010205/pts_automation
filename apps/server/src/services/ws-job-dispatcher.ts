@@ -1,34 +1,32 @@
 import type { WebSocket } from "ws";
 
-import type { RuntimeJob } from "../domain/job.js";
-
 export interface WsJobDispatcherLogger {
-  info(context: Record<string, unknown>, message: string): void;
-  error(context: Record<string, unknown>, message: string): void;
+  info(context: Record<string, unknown>, msg: string): void;
+  error(context: Record<string, unknown>, msg: string): void;
 }
 
 interface ConnectedWorker {
   workerId: string;
   ws: WebSocket;
   status: "QUEUED" | "RUNNING" | "ERROR";
-  currentJobId: string | null;
+  lastDataSentAt: string | null;
+  lastDataReceivedAt: string | null;
 }
 
 export interface WsWorkerMessage {
-  type: "REGISTER" | "HEARTBEAT" | "JOB_COMPLETED" | "JOB_FAILED";
+  type: "HEARTBEAT" | "DATA_RECEIVED" | "DATA_FAILED";
   workerId: string;
   payload?: Record<string, unknown>;
 }
 
 export interface WsServerMessage {
-  type: "JOB_DISPATCHED" | "HEARTBEAT_ACK" | "ERROR";
+  type: "HEARTBEAT_ACK" | "DATA_DISPATCHED" | "ERROR";
   payload?: Record<string, unknown>;
 }
 
 export class WsJobDispatcher {
   private readonly logger: WsJobDispatcherLogger;
   private readonly workers = new Map<string, ConnectedWorker>();
-  private readonly pendingJobs: RuntimeJob[] = [];
 
   public constructor(logger: WsJobDispatcherLogger) {
     this.logger = logger;
@@ -38,8 +36,8 @@ export class WsJobDispatcher {
     const existing = this.workers.get(workerId);
     if (existing) {
       this.logger.info(
-        { event: "WS_RECONNECT", workerId },
-        "Worker reconnected, closing old connection",
+        { event: "WS_TAI_KET_NOI", workerId },
+        "Worker ket noi lai, dong ket noi cu",
       );
       existing.ws.close(1000, "Reconnected");
     }
@@ -48,14 +46,15 @@ export class WsJobDispatcher {
       workerId,
       ws,
       status: "QUEUED",
-      currentJobId: null,
+      lastDataSentAt: null,
+      lastDataReceivedAt: null,
     };
 
     this.workers.set(workerId, worker);
 
     this.logger.info(
-      { event: "WS_WORKER_CONNECTED", workerId },
-      "Worker connected via WebSocket",
+      { event: "WS_WORKER_KET_NOI", workerId },
+      "Worker da ket noi vao WebSocket",
     );
 
     ws.on("message", (data) => {
@@ -64,8 +63,8 @@ export class WsJobDispatcher {
         this.handleWorkerMessage(worker, message);
       } catch (error) {
         this.logger.error(
-          { event: "WS_MESSAGE_PARSE_ERROR", workerId, err: error },
-          "Failed to parse worker message",
+          { event: "WS_LOI_PARSE_TIN_NHAN", workerId, err: error },
+          "Khong the phan tich tin nhan tu worker",
         );
       }
     });
@@ -73,35 +72,55 @@ export class WsJobDispatcher {
     ws.on("close", () => {
       this.workers.delete(workerId);
       this.logger.info(
-        { event: "WS_WORKER_DISCONNECTED", workerId },
-        "Worker disconnected from WebSocket",
+        { event: "WS_WORKER_NGAT_KET_NOI", workerId },
+        "Worker ngat ket noi WebSocket",
       );
     });
 
     ws.on("error", (error) => {
       this.logger.error(
-        { event: "WS_WORKER_ERROR", workerId, err: error },
-        "Worker WebSocket error",
+        { event: "WS_LOI_WORKER", workerId, err: error },
+        "Loi WebSocket tu worker",
       );
     });
-
-    this.dispatchPendingJobs();
   }
 
-  public notifyJobCreated(job: RuntimeJob): void {
-    this.pendingJobs.push(job);
-    this.dispatchPendingJobs();
+  public sendDataToWorker(
+    workerId: string,
+    data: Record<string, unknown>,
+  ): boolean {
+    const worker = this.workers.get(workerId);
+    if (!worker || worker.ws.readyState !== 1) {
+      return false;
+    }
+
+    worker.status = "RUNNING";
+    worker.lastDataSentAt = new Date().toISOString();
+
+    this.sendToWorker(worker, {
+      type: "DATA_DISPATCHED",
+      payload: data,
+    });
+
+    this.logger.info(
+      { event: "WS_DA_GUI_DU_LIEU", workerId },
+      "Da gui du lieu den worker qua WebSocket",
+    );
+
+    return true;
   }
 
   public getConnectedWorkers(): Array<{
     workerId: string;
     status: string;
-    currentJobId: string | null;
+    lastDataSentAt: string | null;
+    lastDataReceivedAt: string | null;
   }> {
     return Array.from(this.workers.values()).map((w) => ({
       workerId: w.workerId,
       status: w.status,
-      currentJobId: w.currentJobId,
+      lastDataSentAt: w.lastDataSentAt,
+      lastDataReceivedAt: w.lastDataReceivedAt,
     }));
   }
 
@@ -115,90 +134,40 @@ export class WsJobDispatcher {
   ): void {
     switch (message.type) {
       case "HEARTBEAT": {
-        worker.status = (message.payload?.status as ConnectedWorker["status"]) ?? "QUEUED";
-        worker.currentJobId = (message.payload?.currentJobId as string) ?? null;
-
         this.sendToWorker(worker, {
           type: "HEARTBEAT_ACK",
           payload: { timestamp: new Date().toISOString() },
         });
-
-        this.dispatchPendingJobs();
         break;
       }
 
-      case "JOB_COMPLETED": {
-        const jobId = message.payload?.jobId as string;
-        worker.status = "QUEUED";
-        worker.currentJobId = null;
+      case "DATA_RECEIVED": {
+        worker.lastDataReceivedAt = new Date().toISOString();
 
         this.logger.info(
-          { event: "WS_JOB_COMPLETED", workerId: worker.workerId, jobId },
-          "Worker reported job completion via WebSocket",
+          { event: "WS_WORKER_NHAN_DU_LIEU", workerId: worker.workerId },
+          "Worker da nhan du lieu qua WebSocket",
         );
-
-        this.dispatchPendingJobs();
         break;
       }
 
-      case "JOB_FAILED": {
-        const jobId = message.payload?.jobId as string;
-        worker.status = "QUEUED";
-        worker.currentJobId = null;
+      case "DATA_FAILED": {
+        worker.status = "ERROR";
+        const errorMsg = message.payload?.error as string;
 
-        this.logger.info(
-          { event: "WS_JOB_FAILED", workerId: worker.workerId, jobId },
-          "Worker reported job failure via WebSocket",
+        this.logger.error(
+          { event: "WS_WORKER_LOI_XU_LY", workerId: worker.workerId, error: errorMsg },
+          "Worker xu ly du lieu that bai",
         );
-
-        this.dispatchPendingJobs();
         break;
       }
 
       default:
         this.logger.error(
-          { event: "WS_UNKNOWN_MESSAGE_TYPE", type: message.type },
-          "Unknown message type from worker",
+          { event: "WS_LOAI_TIN_NHAN_KHONG_XAC_DINH", type: message.type },
+          "Loai tin nhan khong xac dinh tu worker",
         );
     }
-  }
-
-  private dispatchPendingJobs(): void {
-    const idleWorker = Array.from(this.workers.values()).find(
-      (w) => w.status === "QUEUED" && w.ws.readyState === 1,
-    );
-
-    if (!idleWorker || this.pendingJobs.length === 0) {
-      return;
-    }
-
-    const job = this.pendingJobs.shift();
-    if (!job) {
-      return;
-    }
-
-    idleWorker.status = "RUNNING";
-    idleWorker.currentJobId = job.id;
-
-    this.sendToWorker(idleWorker, {
-      type: "JOB_DISPATCHED",
-      payload: {
-        jobId: job.id,
-        createdAt: job.createdAt,
-        request: job.request,
-      },
-    });
-
-    this.logger.info(
-      {
-        event: "WS_JOB_DISPATCHED",
-        jobId: job.id,
-        workerId: idleWorker.workerId,
-      },
-      "Job dispatched to worker via WebSocket",
-    );
-
-    this.dispatchPendingJobs();
   }
 
   private sendToWorker(worker: ConnectedWorker, message: WsServerMessage): void {
