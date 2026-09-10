@@ -2,11 +2,14 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 
 // <workflow-map>
 // Workflow : DataPTS-Auto
-// Nodes   : 6  |  Connections: 5
+// Nodes   : 8  |  Connections: 7
 //
 // NODE INDEX
 // ──────────────────────────────────────────────────────────────────
 // Property name                    Node type (short)         Flags
+// ManualTrigger                    manualTrigger
+// SetStart                         code
+// StartSaved                       respondToWebhook
 // Schedule                         scheduleTrigger
 // ReadSheet                        googleSheets
 // CheckNew                         code
@@ -16,36 +19,95 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 //
 // ROUTING MAP
 // ──────────────────────────────────────────────────────────────────
-// Schedule
-//    → ReadSheet
-//      → CheckNew
-//        → HasNewData
-//          .out(0) → SendToServer
-//          .out(1) → NoAction
+// ManualTrigger → SetStart → StartSaved
+// Schedule → ReadSheet → CheckNew → HasNewData
+//   .out(0) → SendToServer
+//   .out(1) → NoAction
 // </workflow-map>
 
 @workflow({
     id: 'DataPTS-Auto',
     name: 'DataPTS-Auto',
-    active: true,
+    active: false,
     isArchived: false,
     settings: {
-        executionOrder: 'v1',
-        binaryMode: 'separate',
-        availableInMCP: false,
-        timeSavedMode: 'fixed',
         timezone: 'Asia/Ho_Chi_Minh',
+        executionOrder: 'v1',
         callerPolicy: 'workflowsFromSameOwner',
+        availableInMCP: false,
     },
 })
 export class DataPtsAutoWorkflow {
+
+    // =====================================================================
+    // CHI NHANH 1: SET MOC KHOI DIEM (Manual Trigger)
+    // =====================================================================
+
+    @node({
+        id: 'manual-trigger-1',
+        name: 'ManualTrigger',
+        type: 'n8n-nodes-base.manualTrigger',
+        version: 1,
+        position: [-600, 100],
+    })
+    ManualTrigger = {};
+
+    @node({
+        id: 'code-set-start',
+        name: 'SetStart',
+        type: 'n8n-nodes-base.code',
+        version: 2,
+        position: [-400, 100],
+    })
+    SetStart = {
+        mode: 'runOnceForAllItems',
+        jsCode: `
+const data = JSON.stringify($input.all());
+const staticData = $getWorkflowStaticData('global');
+const crypto = require('crypto');
+const hash = crypto.createHash('md5').update(data).digest('hex');
+
+staticData.startHash = hash;
+staticData.startRowCount = $input.all().length;
+staticData.startedAt = new Date().toISOString();
+
+return {
+    json: {
+        ok: true,
+        message: 'Da luu moc khoi diem',
+        startHash: hash,
+        rowCount: $input.all().length,
+        startedAt: staticData.startedAt,
+    }
+};
+`,
+    };
+
+    @node({
+        id: 'respond-start',
+        name: 'StartSaved',
+        type: 'n8n-nodes-base.respondToWebhook',
+        version: 1.5,
+        position: [-200, 100],
+    })
+    StartSaved = {
+        respondWith: 'json',
+        responseBody: '={{ JSON.stringify($json) }}',
+        options: {
+            responseCode: 200,
+        },
+    };
+
+    // =====================================================================
+    // CHI NHANH 2: AUTO POLL (Schedule Trigger)
+    // =====================================================================
 
     @node({
         id: 'schedule-trigger-1',
         name: 'Schedule',
         type: 'n8n-nodes-base.scheduleTrigger',
         version: 1.2,
-        position: [-600, 240],
+        position: [-600, 340],
     })
     Schedule = {
         rule: {
@@ -63,13 +125,13 @@ export class DataPtsAutoWorkflow {
         name: 'ReadSheet',
         type: 'n8n-nodes-base.googleSheets',
         version: 4.5,
-        position: [-400, 240],
+        position: [-400, 340],
     })
     ReadSheet = {
         operation: 'read',
         documentId: {
             __rl: true,
-            mode: 'list',
+            mode: 'id',
             value: '1O3S26f84qsZEidq2YAu0tSO7QGJSWM7cPbfZmbc1RKw',
         },
         sheetName: {
@@ -78,7 +140,7 @@ export class DataPtsAutoWorkflow {
             value: 'Sheet1',
         },
         options: {
-            range: 'A1:J1000',
+            range: 'A:J',
         },
     };
 
@@ -87,26 +149,36 @@ export class DataPtsAutoWorkflow {
         name: 'CheckNew',
         type: 'n8n-nodes-base.code',
         version: 2,
-        position: [-200, 240],
+        position: [-200, 340],
     })
     CheckNew = {
-        mode: 'runOnceForEachItem',
+        mode: 'runOnceForAllItems',
         jsCode: `
-const data = JSON.stringify($input.all());
+const items = $input.all();
+const data = JSON.stringify(items);
 const staticData = $getWorkflowStaticData('global');
-const lastHash = staticData.lastHash || '';
-const currentHash = require('crypto').createHash('md5').update(data).digest('hex');
+const crypto = require('crypto');
+const currentHash = crypto.createHash('md5').update(data).digest('hex');
 
-if (currentHash === lastHash) {
-    return { json: { hasNewData: false } };
+// Kiem tra co moc khoi diem chua
+const startHash = staticData.startHash;
+if (!startHash) {
+    return { json: { hasNewData: false, reason: 'Chua co moc khoi diem. Hay chay Manual Trigger truoc.' } };
 }
 
+// Kiem tra co thay doi khong
+const lastHash = staticData.lastHash || startHash;
+if (currentHash === lastHash) {
+    return { json: { hasNewData: false, reason: 'Khong co du lieu moi' } };
+}
+
+// Co du lieu moi
 staticData.lastHash = currentHash;
 return {
     json: {
         hasNewData: true,
-        rowsCount: $input.all().length,
-        sheetRange: 'Sheet1!A1:J1000',
+        rowsCount: items.length,
+        sheetRange: 'Sheet1!A:J',
     }
 };
 `,
@@ -117,7 +189,7 @@ return {
         name: 'HasNewData',
         type: 'n8n-nodes-base.if',
         version: 2,
-        position: [0, 240],
+        position: [0, 340],
     })
     HasNewData = {
         conditions: {
@@ -146,7 +218,7 @@ return {
         name: 'SendToServer',
         type: 'n8n-nodes-base.httpRequest',
         version: 4.2,
-        position: [300, 140],
+        position: [300, 240],
     })
     SendToServer = {
         method: 'POST',
@@ -162,8 +234,7 @@ return {
         },
         sendBody: true,
         specifyBody: 'json',
-        jsonBody:
-            '={{ JSON.stringify({ workerId: "PTS-PC-B", sheetRange: $json.sheetRange }) }}',
+        jsonBody: '={{ JSON.stringify({ workerId: "PTS-PC-B", sheetRange: $json.sheetRange }) }}',
         options: {},
     };
 
@@ -172,12 +243,21 @@ return {
         name: 'NoAction',
         type: 'n8n-nodes-base.noOp',
         version: 1,
-        position: [300, 340],
+        position: [300, 440],
     })
     NoAction = {};
 
+    // =====================================================================
+    // ROUTAGE
+    // =====================================================================
+
     @links()
     defineRouting() {
+        // Chi nhanh 1: Set moc khoi diem
+        this.ManualTrigger.out(0).to(this.SetStart.in(0));
+        this.SetStart.out(0).to(this.StartSaved.in(0));
+
+        // Chi nhanh 2: Auto poll
         this.Schedule.out(0).to(this.ReadSheet.in(0));
         this.ReadSheet.out(0).to(this.CheckNew.in(0));
         this.CheckNew.out(0).to(this.HasNewData.in(0));

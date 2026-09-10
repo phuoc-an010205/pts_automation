@@ -41,18 +41,33 @@ n8n (Schedule Trigger) → Server (192.168.10.112:8888) → Worker/PC44 (192.168
 
 ## n8n Workflows
 
-### DataPTS-Auto (Schedule Trigger)
+### DataPTS-Auto (Schedule Trigger + Set Mốc Khởi Điểm)
 
-- **Trigger**: Schedule Trigger — mỗi 30 giây
-- **ReadSheet**: Đọc Google Sheet (A1:J1000)
-- **CheckNew**: Code node — so sánh MD5 hash với lần trước
+Workflow có 2 chi nhánh:
+
+#### Chi nhánh 1: Set Mốc Khởi Điểm (Manual Trigger)
+- **ManualTrigger**: Chạy thủ công khi cần
+- **SetStart**: Code node — đọc data, tính MD5 hash, lưu vào static data
+- **StartSaved**: Trả về JSON xác nhận đã lưu
+
+**Cách dùng**: Mở n8n → Chạy workflow thủ công → Đọc Google Sheet → Tính hash → Lưu làm mốc khởi điểm
+
+#### Chi nhánh 2: Auto Poll (Schedule Trigger)
+- **Schedule**: Mỗi 30 giây
+- **ReadSheet**: Đọc Google Sheet (A:J)
+- **CheckNew**: Code node — so sánh MD5 hash với mốc khởi điểm
 - **HasNewData**: IF — có data mới hay không
 - **SendToServer**: POST đến `http://192.168.10.112:8888/api/send-data`
 - **NoAction**: Không làm gì nếu không có data mới
 
+**Logic so sánh**:
+1. Nếu chưa có mốc khởi điểm → bỏ qua, hiện thông báo
+2. Nếu hash giống lần trước → không có data mới
+3. Nếu hash khác → có data mới → POST đến server
+
 Config:
 - `workerId`: `"PTS-PC-B"` (cấu hình theo máy)
-- `sheetRange`: `"Sheet1!A1:J1000"` (cấu hình theo sheet)
+- `sheetRange`: `"Sheet1!A:J"` (cấu hình theo sheet)
 - Poll interval: 30 giây (có thể thay đổi trong Schedule node)
 
 ## Endpoints
