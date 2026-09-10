@@ -139,9 +139,7 @@ return {
             mode: 'list',
             value: 'Sheet1',
         },
-        options: {
-            range: 'A:J',
-        },
+        options: {},
     };
 
     @node({
